@@ -2,10 +2,47 @@ use std::sync::Arc;
 
 use backoff::{future::retry, ExponentialBackoff};
 use reqwest::{Body, Method};
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 
 use crate::http_client::{HttpClient, HttpClientError};
+
+#[derive(Error, Debug)]
+pub enum FetchJsonError {
+    #[error("error while constructing json fetch request: {0:?}")]
+    RequestConstruction(#[source] HttpClientError),
+    #[error("error while performing json fetching request: {0:?}")]
+    Request(#[source] reqwest::Error),
+    #[error("error while deserializing json fetch response: {0:?}")]
+    Deserialization(#[source] reqwest::Error),
+}
+
+pub async fn fetch_json_with_retry<J: DeserializeOwned>(
+    cid: String,
+    ipfs_http_client: Arc<HttpClient>,
+    backoff: ExponentialBackoff,
+) -> Result<J, FetchJsonError> {
+    let fetch = || async {
+        ipfs_http_client
+            .request(Method::POST, format!("/api/v0/cat?arg={cid}"))
+            .await
+            .map_err(|err| backoff::Error::Transient {
+                err: FetchJsonError::RequestConstruction(err),
+                retry_after: None,
+            })?
+            .send()
+            .await
+            .map_err(|err| backoff::Error::Transient {
+                err: FetchJsonError::Request(err),
+                retry_after: None,
+            })?
+            .json::<J>()
+            .await
+            .map_err(|err| backoff::Error::Permanent(FetchJsonError::Deserialization(err)))
+    };
+
+    retry(backoff, fetch).await
+}
 
 #[derive(Error, Debug)]
 pub enum IpfsPinError {
