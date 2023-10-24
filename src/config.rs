@@ -1,4 +1,4 @@
-use std::{fs::File, io, path::Path};
+use std::{fs::File, io, path::PathBuf};
 
 use serde::de::DeserializeOwned;
 use thiserror::Error;
@@ -15,7 +15,7 @@ pub enum GetConfigError {
 
 pub fn get_config<S: AsRef<str>, C: DeserializeOwned>(
     app_name: S,
-    alt_path: Option<&Path>,
+    alt_path: Option<PathBuf>,
 ) -> Result<C, GetConfigError> {
     if let Some(project_dirs) =
         directories::ProjectDirs::from("xyz", "carrot-labs", app_name.as_ref())
@@ -23,7 +23,7 @@ pub fn get_config<S: AsRef<str>, C: DeserializeOwned>(
         let path = if let Some(alt_path) = alt_path {
             alt_path
         } else {
-            project_dirs.config_dir()
+            PathBuf::from(project_dirs.config_dir())
         };
 
         let config_file = File::open(path).map_err(|err| GetConfigError::FileOpen(err))?;
