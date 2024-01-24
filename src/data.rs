@@ -19,12 +19,12 @@ pub enum FetchJsonError {
 
 async fn fetch_json<J: DeserializeOwned>(
     cid: String,
-    s3_http_client: Arc<HttpClient>,
+    s3_cdn_http_client: Arc<HttpClient>,
     ipfs_http_client: Arc<HttpClient>,
 ) -> Result<J, FetchJsonError> {
     let cid = cid.to_lowercase();
 
-    match s3_http_client
+    match s3_cdn_http_client
         .request(Method::GET, cid.clone())
         .await
         .map_err(|err| FetchJsonError::RequestConstruction(err))?
@@ -52,14 +52,14 @@ async fn fetch_json<J: DeserializeOwned>(
 
 pub async fn fetch_json_with_retry<J: DeserializeOwned>(
     cid: String,
-    s3_http_client: Arc<HttpClient>,
+    s3_cdn_http_client: Arc<HttpClient>,
     ipfs_http_client: Arc<HttpClient>,
     backoff: ExponentialBackoff,
 ) -> Result<J, FetchJsonError> {
     let fetch = || async {
         fetch_json::<J>(
             cid.clone(),
-            s3_http_client.clone(),
+            s3_cdn_http_client.clone(),
             ipfs_http_client.clone(),
         )
         .await
@@ -78,78 +78,64 @@ pub async fn fetch_json_with_retry<J: DeserializeOwned>(
 }
 
 #[derive(Error, Debug)]
-pub enum StoreJsonIpfsError {
-    #[error("error while constructing json ipfs store request: {0:?}")]
+pub enum StoreCidIpfsError {
+    #[error("error while constructing cid ipfs store request: {0:?}")]
     RequestConstruction(#[source] HttpClientError),
-    #[error("error while performing json ipfs store request: {0:?}")]
+    #[error("error while performing cid ipfs store request: {0:?}")]
     Request(#[source] reqwest::Error),
-    #[error("error while deserializing ipfs json store request: {0:?}")]
+    #[error("error while deserializing ipfs cid store request: {0:?}")]
     Deserialization(#[source] reqwest::Error),
     #[error("cid mismatch: got {0}, expected {1}")]
     CidMismatch(String, String),
 }
 
-#[derive(Deserialize)]
-pub struct StoreResponse {
+#[derive(Serialize, Deserialize)]
+pub struct StoreCidRequestResponse {
     cid: String,
 }
 
-#[derive(Serialize)]
-pub struct StoreJsonRequest<J: Serialize> {
-    data: J,
-}
-
-pub async fn store_json_ipfs<J: Serialize>(
-    json: &J,
-    expected_cid: String,
+pub async fn store_cid_ipfs(
+    cid: String,
     data_uploader_http_client: Arc<HttpClient>,
-) -> Result<(), StoreJsonIpfsError> {
+) -> Result<(), StoreCidIpfsError> {
     let store_response = data_uploader_http_client
-        .request(Method::POST, format!("/data/json/ipfs"))
+        .request(Method::POST, format!("/data/ipfs"))
         .await
-        .map_err(|err| StoreJsonIpfsError::RequestConstruction(err))?
-        .json(&json)
+        .map_err(|err| StoreCidIpfsError::RequestConstruction(err))?
+        .json(&StoreCidRequestResponse { cid: cid.clone() })
         .send()
         .await
-        .map_err(|err| StoreJsonIpfsError::Request(err))?
-        .json::<StoreResponse>()
+        .map_err(|err| StoreCidIpfsError::Request(err))?
+        .json::<StoreCidRequestResponse>()
         .await
-        .map_err(|err| StoreJsonIpfsError::Deserialization(err))?;
+        .map_err(|err| StoreCidIpfsError::Deserialization(err))?;
 
-    if store_response.cid != expected_cid {
-        Err(StoreJsonIpfsError::CidMismatch(
-            store_response.cid,
-            expected_cid,
-        ))
+    if store_response.cid != cid {
+        Err(StoreCidIpfsError::CidMismatch(store_response.cid, cid))
     } else {
         Ok(())
     }
 }
 
-pub async fn store_json_ipfs_with_retry<J: Serialize>(
-    json: J,
-    expected_cid: String,
+pub async fn store_cid_ipfs_with_retry<J: Serialize>(
+    cid: String,
     data_uploader_http_client: Arc<HttpClient>,
     backoff: ExponentialBackoff,
-) -> Result<(), StoreJsonIpfsError> {
+) -> Result<(), StoreCidIpfsError> {
     let store = || async {
-        store_json_ipfs(
-            &json,
-            expected_cid.clone(),
-            data_uploader_http_client.clone(),
-        )
-        .await
-        .map_err(|err| match err {
-            StoreJsonIpfsError::RequestConstruction(_) | StoreJsonIpfsError::Request(_) => {
-                backoff::Error::Transient {
-                    err,
-                    retry_after: None,
+        store_cid_ipfs(cid.clone(), data_uploader_http_client.clone())
+            .await
+            .map_err(|err| match err {
+                StoreCidIpfsError::RequestConstruction(_) | StoreCidIpfsError::Request(_) => {
+                    backoff::Error::Transient {
+                        err,
+                        retry_after: None,
+                    }
                 }
-            }
-            StoreJsonIpfsError::Deserialization(_) | StoreJsonIpfsError::CidMismatch(_, _) => {
-                backoff::Error::Permanent(err)
-            }
-        })
+                StoreCidIpfsError::Deserialization(_) | StoreCidIpfsError::CidMismatch(_, _) => {
+                    backoff::Error::Permanent(err)
+                }
+            })
     };
 
     retry(backoff, store).await
