@@ -1,3 +1,3 @@
 pub mod config;
 pub mod http_client;
-pub mod ipfs;
+pub mod data;
