@@ -99,7 +99,7 @@ pub async fn store_cid_ipfs(
     data_uploader_http_client: Arc<HttpClient>,
 ) -> Result<(), StoreCidIpfsError> {
     let store_response = data_uploader_http_client
-        .request(Method::POST, format!("/data/ipfs"))
+        .request(Method::POST, "/data/ipfs")
         .await
         .map_err(|err| StoreCidIpfsError::RequestConstruction(err))?
         .json(&StoreCidRequestResponse { cid: cid.clone() })
