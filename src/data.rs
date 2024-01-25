@@ -19,12 +19,12 @@ pub enum FetchJsonError {
 
 async fn fetch_json<J: DeserializeOwned>(
     cid: String,
-    s3_cdn_http_client: Arc<HttpClient>,
+    data_cdn_http_client: Arc<HttpClient>,
     ipfs_http_client: Arc<HttpClient>,
 ) -> Result<J, FetchJsonError> {
     let cid = cid.to_lowercase();
 
-    match s3_cdn_http_client
+    match data_cdn_http_client
         .request(Method::GET, cid.clone())
         .await
         .map_err(|err| FetchJsonError::RequestConstruction(err))?
@@ -52,14 +52,14 @@ async fn fetch_json<J: DeserializeOwned>(
 
 pub async fn fetch_json_with_retry<J: DeserializeOwned>(
     cid: String,
-    s3_cdn_http_client: Arc<HttpClient>,
+    data_cdn_http_client: Arc<HttpClient>,
     ipfs_http_client: Arc<HttpClient>,
     backoff: ExponentialBackoff,
 ) -> Result<J, FetchJsonError> {
     let fetch = || async {
         fetch_json::<J>(
             cid.clone(),
-            s3_cdn_http_client.clone(),
+            data_cdn_http_client.clone(),
             ipfs_http_client.clone(),
         )
         .await
