@@ -20,7 +20,7 @@ pub enum FetchJsonError {
 async fn fetch_json<J: DeserializeOwned>(
     cid: String,
     data_cdn_http_client: Arc<HttpClient>,
-    ipfs_http_client: Arc<HttpClient>,
+    ipfs_gateway_http_client: Arc<HttpClient>,
 ) -> Result<J, FetchJsonError> {
     let cid = cid.to_lowercase();
 
@@ -37,8 +37,8 @@ async fn fetch_json<J: DeserializeOwned>(
                 .await
                 .map_err(|err| FetchJsonError::Deserialization(err));
         }
-        _ => ipfs_http_client
-            .request(Method::POST, format!("/api/v0/cat?arg={cid}"))
+        _ => ipfs_gateway_http_client
+            .request(Method::GET, format!("/ipfs/{cid}"))
             .await
             .map_err(|err| FetchJsonError::RequestConstruction(err))?
             .send()
@@ -96,9 +96,9 @@ pub struct StoreCidRequestResponse {
 
 pub async fn store_cid_ipfs(
     cid: String,
-    data_uploader_http_client: Arc<HttpClient>,
+    data_manager_http_client: Arc<HttpClient>,
 ) -> Result<(), StoreCidIpfsError> {
-    let store_response = data_uploader_http_client
+    let store_response = data_manager_http_client
         .request(Method::POST, "/data/ipfs")
         .await
         .map_err(|err| StoreCidIpfsError::RequestConstruction(err))?
@@ -119,11 +119,11 @@ pub async fn store_cid_ipfs(
 
 pub async fn store_cid_ipfs_with_retry(
     cid: String,
-    data_uploader_http_client: Arc<HttpClient>,
+    data_manager_http_client: Arc<HttpClient>,
     backoff: ExponentialBackoff,
 ) -> Result<(), StoreCidIpfsError> {
     let store = || async {
-        store_cid_ipfs(cid.clone(), data_uploader_http_client.clone())
+        store_cid_ipfs(cid.clone(), data_manager_http_client.clone())
             .await
             .map_err(|err| match err {
                 StoreCidIpfsError::RequestConstruction(_) | StoreCidIpfsError::Request(_) => {
