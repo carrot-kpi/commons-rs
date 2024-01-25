@@ -117,7 +117,7 @@ pub async fn store_cid_ipfs(
     }
 }
 
-pub async fn store_cid_ipfs_with_retry<J: Serialize>(
+pub async fn store_cid_ipfs_with_retry(
     cid: String,
     data_uploader_http_client: Arc<HttpClient>,
     backoff: ExponentialBackoff,
